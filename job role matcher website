@@ -1,0 +1,220 @@
+import { useState } from 'react';
+
+// The main component for our job role matcher application.
+export default function App() {
+  // State for storing the user's skills.
+  const [skills, setSkills] = useState('');
+  // State for storing the suggested job role from the API.
+  const [jobRole, setJobRole] = useState('');
+  // State for storing the generated resume summary.
+  const [resumeSummary, setResumeSummary] = useState('');
+  // State for storing the generated interview questions.
+  const [interviewQuestions, setInterviewQuestions] = useState('');
+  // State for managing the loading status during the API call.
+  const [loading, setLoading] = useState(false);
+  // State for handling potential errors during the API call.
+  const [error, setError] = useState(null);
+
+  /**
+   * General-purpose function to call the Gemini API with a given prompt.
+   * Includes exponential backoff for retrying API calls.
+   * @param {string} prompt The prompt to send to the API.
+   * @returns {Promise<string|null>} The generated text or null on failure.
+   */
+  const callGeminiAPI = async (prompt) => {
+    let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+    const payload = { contents: chatHistory };
+    const apiKey = "";
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+    let response;
+    let attempts = 0;
+    const maxAttempts = 5;
+    const initialDelay = 1000; // 1 second
+
+    while (attempts < maxAttempts) {
+      try {
+        response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          throw new Error(`API call failed with status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        if (result.candidates && result.candidates.length > 0 &&
+            result.candidates[0].content && result.candidates[0].content.parts &&
+            result.candidates[0].content.parts.length > 0) {
+          return result.candidates[0].content.parts[0].text;
+        } else {
+          throw new Error("Invalid API response format or no content found.");
+        }
+      } catch (e) {
+        attempts++;
+        if (attempts >= maxAttempts) {
+          setError(`Failed to get a response after ${maxAttempts} attempts. Please try again later.`);
+          console.error(e);
+          return null;
+        } else {
+          const delay = initialDelay * Math.pow(2, attempts - 1);
+          await new Promise(res => setTimeout(res, delay));
+        }
+      }
+    }
+    return null;
+  };
+
+  /**
+   * Handles finding a job role based on the provided skills.
+   */
+  const handleFindJobRole = async () => {
+    setJobRole('');
+    setResumeSummary('');
+    setInterviewQuestions('');
+    setError(null);
+    setLoading(true);
+
+    const prompt = `Based on the following skills, suggest a suitable job role. Keep the answer concise and to the point, just the job title and a brief one-sentence description.
+      
+      Skills:
+      ${skills}`;
+
+    const text = await callGeminiAPI(prompt);
+    if (text) {
+      setJobRole(text);
+    }
+    setLoading(false);
+  };
+  
+  /**
+   * Generates a resume summary based on skills and the suggested job role.
+   */
+  const handleGenerateSummary = async () => {
+    setLoading(true);
+    setResumeSummary('');
+    const prompt = `Based on the following skills and job role, write a professional and concise resume summary.
+      
+      Skills: ${skills}
+      Job Role: ${jobRole}`;
+      
+    const text = await callGeminiAPI(prompt);
+    if (text) {
+      setResumeSummary(text);
+    }
+    setLoading(false);
+  };
+
+  /**
+   * Generates a list of interview questions for the suggested job role.
+   */
+  const handleGenerateInterviewQuestions = async () => {
+    setLoading(true);
+    setInterviewQuestions('');
+    const prompt = `Generate a list of 5 common interview questions for the following job role, formatted as a numbered list.
+      
+      Job Role: ${jobRole}`;
+
+    const text = await callGeminiAPI(prompt);
+    if (text) {
+      setInterviewQuestions(text);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-4 font-sans flex items-center justify-center">
+      <div className="w-full max-w-2xl bg-white bg-opacity-90 backdrop-filter backdrop-blur-lg rounded-2xl shadow-2xl p-8 transform transition-all duration-500 hover:scale-105">
+        <header className="text-center mb-8">
+          <h1 className="text-4xl md:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">
+            Skill-Based Job Finder
+          </h1>
+          <p className="mt-2 text-lg text-gray-600">
+            Enter your skills and find your next career path.
+          </p>
+        </header>
+
+        <div className="space-y-6">
+          <div>
+            <label htmlFor="skills" className="block text-sm font-medium text-gray-700 mb-2">
+              Your Skills
+            </label>
+            <textarea
+              id="skills"
+              rows="6"
+              className="w-full p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 resize-none shadow-sm"
+              placeholder="e.g., Python, SQL, Data Analysis, Machine Learning, Tableau"
+              value={skills}
+              onChange={(e) => setSkills(e.target.value)}
+            ></textarea>
+          </div>
+          <button
+            onClick={handleFindJobRole}
+            disabled={loading || skills.trim() === ''}
+            className="w-full p-4 text-lg font-semibold text-white bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl shadow-lg hover:from-blue-600 hover:to-purple-600 focus:outline-none focus:ring-4 focus:ring-blue-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
+          >
+            {loading ? (
+              <span className="flex items-center justify-center space-x-2">
+                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Thinking...</span>
+              </span>
+            ) : (
+              'Find Job Role'
+            )}
+          </button>
+        </div>
+        
+        {/* Display the result or error message */}
+        {error && (
+          <div className="mt-8 p-4 bg-red-100 border border-red-400 text-red-700 rounded-xl text-center shadow-md">
+            <p>{error}</p>
+          </div>
+        )}
+
+        {jobRole && (
+          <div className="mt-8 p-6 bg-green-50 border-t-4 border-green-500 rounded-xl shadow-lg">
+            <h2 className="text-2xl font-bold text-green-700 mb-2">Suggested Job Role:</h2>
+            <p className="text-gray-800 text-lg">{jobRole}</p>
+            
+            <div className="mt-6 flex flex-col space-y-4 md:flex-row md:space-y-0 md:space-x-4">
+              <button
+                onClick={handleGenerateSummary}
+                disabled={loading}
+                className="flex-1 p-3 text-sm font-semibold text-white bg-gradient-to-r from-teal-500 to-green-500 rounded-xl shadow-md hover:from-teal-600 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              >
+                {loading ? 'Generating...' : '✨ Generate Resume Summary'}
+              </button>
+              <button
+                onClick={handleGenerateInterviewQuestions}
+                disabled={loading}
+                className="flex-1 p-3 text-sm font-semibold text-white bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl shadow-md hover:from-yellow-600 hover:to-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              >
+                {loading ? 'Generating...' : '✨ Get Interview Questions'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {resumeSummary && (
+          <div className="mt-6 p-6 bg-gray-50 border-t-4 border-gray-400 rounded-xl shadow-lg">
+            <h2 className="text-xl font-bold text-gray-700 mb-2">Professional Summary:</h2>
+            <p className="text-gray-800">{resumeSummary}</p>
+          </div>
+        )}
+
+        {interviewQuestions && (
+          <div className="mt-6 p-6 bg-gray-50 border-t-4 border-gray-400 rounded-xl shadow-lg whitespace-pre-line">
+            <h2 className="text-xl font-bold text-gray-700 mb-2">Interview Questions:</h2>
+            <p className="text-gray-800">{interviewQuestions}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
